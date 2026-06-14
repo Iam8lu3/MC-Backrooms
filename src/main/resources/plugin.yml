@@ -1,0 +1,9 @@
+name: backrooms
+version: 1.0.0
+main: com.backrooms.BackroomsPlugin
+api-version: '1.21'
+description: A deterministic asymmetric Backrooms generator.
+permissions:
+  backrooms.entry:
+    description: Allows users to warp into the backrooms dimension.
+    default: true
