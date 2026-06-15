@@ -2,6 +2,9 @@
 
 <p align="center">
   <img src="https://github.com/Iam8lu3/MC-Backrooms/blob/main/5cadd2b9-4592-4d01-918a-bae600678697.png?raw=true" width="100%">
+<br><br>
+Join the discord <a href="https://discord.gg/xbJVm3J5" Target="new">https://discord.gg/xbJVm3J5/a>
+
 </p>
 
 MC-Backrooms is a procedural Backrooms world generator plugin for Minecraft Java Edition servers running Paper, Spigot, and Bukkit.
