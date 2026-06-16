@@ -1,0 +1,647 @@
+package com.backrooms;
+
+import org.bukkit.Art;
+import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.Sign;
+import org.bukkit.block.data.Bisected;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.type.Door;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.ItemFrame;
+import org.bukkit.entity.Painting;
+import org.bukkit.generator.BlockPopulator;
+import org.bukkit.generator.ChunkGenerator;
+import org.bukkit.generator.WorldInfo;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.loot.LootTables;
+import org.bukkit.loot.Lootable;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+public class BackroomsGenerator extends ChunkGenerator {
+
+    private static final int[] FLOORS = {40, 55, 70, 85, 100, 115, 130, 145, 160, 175, 190, 205, 220, 235};
+    private static final int ROOM_HEIGHT = 6;
+    private static final int MODULE = 40;
+
+    @Override
+    public void generateNoise(@NotNull WorldInfo worldInfo,
+                              @NotNull Random random,
+                              int chunkX,
+                              int chunkZ,
+                              @NotNull ChunkData chunkData) {
+
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+
+                int worldX = (chunkX << 4) + x;
+                int worldZ = (chunkZ << 4) + z;
+
+                for (int floorY : FLOORS) {
+                    int ceilingY = floorY + ROOM_HEIGHT;
+
+                    Material floorMaterial = getFloorMaterial(floorY, worldX, worldZ);
+                    Material wallMaterial = getWallMaterial(floorY, worldX, worldZ);
+                    Material ceilingMaterial = getCeilingMaterial(floorY, worldX, worldZ);
+
+                    chunkData.setBlock(x, floorY - 1, z, floorY == FLOORS[0] ? Material.BEDROCK : Material.STONE);
+                    chunkData.setBlock(x, floorY, z, floorY == FLOORS[0] ? Material.BEDROCK : floorMaterial);
+
+                    for (int y = floorY + 1; y < ceilingY; y++) {
+                        chunkData.setBlock(x, y, z, Material.AIR);
+                    }
+
+                    chunkData.setBlock(x, ceilingY, z, ceilingMaterial);
+
+                    if (isSpawnRoom(worldX, worldZ, floorY)) {
+                        generateSpawnRoomBlock(chunkData, x, floorY, z, worldX, worldZ);
+                        continue;
+                    }
+
+                    int region = getRegionType(worldX, worldZ);
+                    if (shouldGenerateWall(worldX, worldZ, region)) {
+                        if (!isDoorway(worldX, worldZ)) {
+                            for (int y = floorY + 1; y < ceilingY; y++) {
+                                chunkData.setBlock(x, y, z, wallMaterial);
+                            }
+                        } else if (shouldPlaceDoor(worldX, worldZ, floorY)) {
+                            placeDoor(chunkData, x, floorY, z, worldX, worldZ);
+                        }
+                    }
+
+                    if (shouldGenerateLight(worldX, worldZ, region) && !shouldGenerateWall(worldX, worldZ, region)) {
+                        chunkData.setBlock(x, ceilingY - 1, z, Material.SEA_LANTERN);
+                    }
+
+                    if (shouldGenerateFurniture(worldX, worldZ, floorY) && !shouldGenerateWall(worldX, worldZ, region)) {
+                        generateFurniture(chunkData, x, floorY, z, worldX, worldZ, region);
+                    }
+
+                    if (shouldGenerateWaterRoom(worldX, worldZ, floorY, region)) {
+                        chunkData.setBlock(x, floorY + 1, z, Material.WATER);
+                    }
+
+                    if (shouldGenerateLavaRoom(worldX, worldZ, floorY, region)) {
+                        chunkData.setBlock(x, floorY, z, Material.NETHERRACK);
+                        chunkData.setBlock(x, floorY + 1, z, Material.LAVA);
+                    }
+
+                    if (shouldGenerateVoidShaft(worldX, worldZ, region)) {
+                        for (int y = FLOORS[0]; y <= FLOORS[FLOORS.length - 1] + ROOM_HEIGHT; y++) {
+                            chunkData.setBlock(x, y, z, Material.AIR);
+                        }
+                    }
+                }
+
+                generateStairwells(chunkData, x, z, worldX, worldZ);
+            }
+        }
+    }
+
+    @Override
+    public @NotNull List<BlockPopulator> getDefaultPopulators(@NotNull World world) {
+        List<BlockPopulator> populators = new ArrayList<>();
+        populators.add(new BackroomsPopulator());
+        return populators;
+    }
+
+    public @NotNull Location getFixedSpawnLocation(@NotNull World world, @NotNull Random random) {
+        return new Location(world, 20.5, FLOORS[0] + 1, 20.5);
+    }
+
+    private boolean isSpawnRoom(int worldX, int worldZ, int floorY) {
+        return floorY == FLOORS[0] && worldX >= 8 && worldX <= 32 && worldZ >= 8 && worldZ <= 32;
+    }
+
+    private void generateSpawnRoomBlock(ChunkData chunkData, int x, int floorY, int z, int worldX, int worldZ) {
+        int ceilingY = floorY + ROOM_HEIGHT;
+        boolean wall = worldX == 8 || worldX == 32 || worldZ == 8 || worldZ == 32;
+        boolean door = (worldX >= 18 && worldX <= 22 && worldZ == 8) || (worldX >= 18 && worldX <= 22 && worldZ == 32);
+
+        chunkData.setBlock(x, floorY - 1, z, Material.BEDROCK);
+        chunkData.setBlock(x, floorY, z, Material.BEDROCK);
+
+        for (int y = floorY + 1; y < ceilingY; y++) {
+            chunkData.setBlock(x, y, z, Material.AIR);
+        }
+
+        chunkData.setBlock(x, ceilingY, z, Material.SMOOTH_SANDSTONE);
+
+        if (wall && !door) {
+            for (int y = floorY + 1; y < ceilingY; y++) {
+                chunkData.setBlock(x, y, z, Material.YELLOW_TERRACOTTA);
+            }
+        }
+
+        if ((worldX == 14 && worldZ == 14) || (worldX == 26 && worldZ == 14) ||
+            (worldX == 14 && worldZ == 26) || (worldX == 26 && worldZ == 26)) {
+            chunkData.setBlock(x, ceilingY - 1, z, Material.SEA_LANTERN);
+        }
+
+        if (worldX == 10 && worldZ == 10) chunkData.setBlock(x, floorY + 1, z, Material.BARREL);
+        if (worldX == 11 && worldZ == 10) chunkData.setBlock(x, floorY + 1, z, Material.CHEST);
+        if (worldX == 30 && worldZ == 30) chunkData.setBlock(x, floorY + 1, z, Material.CRAFTING_TABLE);
+        if (worldX == 20 && worldZ == 9) chunkData.setBlock(x, floorY + 1, z, Material.OAK_SIGN);
+    }
+
+    private boolean shouldGenerateWall(int worldX, int worldZ, int region) {
+        int localX = Math.floorMod(worldX, MODULE);
+        int localZ = Math.floorMod(worldZ, MODULE);
+
+        if (region == 4) {
+            boolean hallX = localX >= 16 && localX <= 23;
+            boolean hallZ = localZ >= 16 && localZ <= 23;
+            if (hallX || hallZ) return false;
+            return localX % 10 == 0 || localZ % 10 == 0;
+        }
+
+        if (region == 2) {
+            return localX == 0 || localZ == 0 || localX == 39 || localZ == 39;
+        }
+
+        boolean mainNorthSouthHall = localX >= 18 && localX <= 21;
+        boolean mainEastWestHall = localZ >= 18 && localZ <= 21;
+
+        if (mainNorthSouthHall || mainEastWestHall) return false;
+
+        boolean roomBorder = localX == 8 || localX == 16 || localX == 24 || localX == 32 ||
+                             localZ == 8 || localZ == 16 || localZ == 24 || localZ == 32;
+
+        boolean outerWall = localX == 0 || localZ == 0 || localX == 39 || localZ == 39;
+
+        return roomBorder || outerWall;
+    }
+
+    private boolean isDoorway(int worldX, int worldZ) {
+        int localX = Math.floorMod(worldX, MODULE);
+        int localZ = Math.floorMod(worldZ, MODULE);
+
+        return
+                (localX == 8  && localZ >= 10 && localZ <= 12) ||
+                (localX == 16 && localZ >= 18 && localZ <= 20) ||
+                (localX == 24 && localZ >= 26 && localZ <= 28) ||
+                (localX == 32 && localZ >= 10 && localZ <= 12) ||
+                (localZ == 8  && localX >= 10 && localX <= 12) ||
+                (localZ == 16 && localX >= 18 && localX <= 20) ||
+                (localZ == 24 && localX >= 26 && localX <= 28) ||
+                (localZ == 32 && localX >= 10 && localX <= 12);
+    }
+
+    private boolean shouldPlaceDoor(int worldX, int worldZ, int floorY) {
+        int localX = Math.floorMod(worldX, MODULE);
+        int localZ = Math.floorMod(worldZ, MODULE);
+
+        boolean center = localX == 11 || localX == 19 || localX == 27 || localZ == 11 || localZ == 19 || localZ == 27;
+        if (!center) return false;
+
+        Random r = new Random(worldX * 92821L ^ worldZ * 37199L ^ floorY * 81283L);
+        return r.nextDouble() < 0.55;
+    }
+
+    private void placeDoor(ChunkData chunkData, int x, int floorY, int z, int worldX, int worldZ) {
+        Random r = new Random(worldX * 71237L ^ worldZ * 19391L ^ floorY * 33199L);
+        Material mat = r.nextDouble() < 0.65 ? Material.OAK_DOOR : (r.nextDouble() < 0.80 ? Material.SPRUCE_DOOR : Material.IRON_DOOR);
+        BlockFace facing = isWallAlongX(worldX) ? BlockFace.EAST : BlockFace.SOUTH;
+
+        Door bottom = (Door) Bukkit.createBlockData(mat);
+        bottom.setHalf(Bisected.Half.BOTTOM);
+        bottom.setFacing(facing);
+
+        Door top = (Door) Bukkit.createBlockData(mat);
+        top.setHalf(Bisected.Half.TOP);
+        top.setFacing(facing);
+
+        chunkData.setBlock(x, floorY + 1, z, bottom);
+        chunkData.setBlock(x, floorY + 2, z, top);
+    }
+
+    private boolean isWallAlongX(int worldX) {
+        int localX = Math.floorMod(worldX, MODULE);
+        return localX == 8 || localX == 16 || localX == 24 || localX == 32;
+    }
+
+    private boolean shouldGenerateLight(int worldX, int worldZ, int region) {
+        if (region == 6) {
+            return Math.floorMod(worldX, 16) == 8 && Math.floorMod(worldZ, 16) == 8;
+        }
+        return Math.floorMod(worldX, 6) == 3 && Math.floorMod(worldZ, 6) == 3;
+    }
+
+    private boolean shouldGenerateFurniture(int worldX, int worldZ, int floorY) {
+        Random r = new Random(worldX * 73428767L ^ worldZ * 912931L ^ floorY * 19349663L);
+        return r.nextDouble() < 0.05;
+    }
+
+    private boolean shouldGenerateWaterRoom(int worldX, int worldZ, int floorY, int region) {
+        if (region == 3) return true;
+        if (floorY < 70) return false;
+
+        int localX = Math.floorMod(worldX, MODULE);
+        int localZ = Math.floorMod(worldZ, MODULE);
+        return localX > 5 && localX < 15 && localZ > 25 && localZ < 35;
+    }
+
+    private boolean shouldGenerateLavaRoom(int worldX, int worldZ, int floorY, int region) {
+        if (region == 3 || region == 4) return false;
+        if (floorY < 85) return false;
+
+        int localX = Math.floorMod(worldX, MODULE);
+        int localZ = Math.floorMod(worldZ, MODULE);
+        return localX > 25 && localX < 35 && localZ > 5 && localZ < 15;
+    }
+
+    private boolean shouldGenerateVoidShaft(int worldX, int worldZ, int region) {
+        if (region == 0 || region == 3) return false;
+        int localX = Math.floorMod(worldX, MODULE);
+        int localZ = Math.floorMod(worldZ, MODULE);
+        return localX >= 36 && localX <= 39 && localZ >= 36 && localZ <= 39;
+    }
+
+    private void generateFurniture(ChunkData chunkData, int x, int floorY, int z, int worldX, int worldZ, int region) {
+        Random r = new Random(worldX * 92821L + worldZ * 37199L + floorY);
+        double roll = r.nextDouble();
+
+        if (region == 4) {
+            if (roll < 0.40) chunkData.setBlock(x, floorY + 1, z, Material.BARREL);
+            else if (roll < 0.70) chunkData.setBlock(x, floorY + 1, z, Material.CHEST);
+            else chunkData.setBlock(x, floorY + 1, z, Material.FURNACE);
+            return;
+        }
+
+        if (region == 5) {
+            if (roll < 0.50) chunkData.setBlock(x, floorY + 1, z, Material.BOOKSHELF);
+            else if (roll < 0.75) chunkData.setBlock(x, floorY + 1, z, Material.LECTERN);
+            else chunkData.setBlock(x, floorY + 1, z, Material.CHEST);
+            return;
+        }
+
+        if (roll < 0.12) chunkData.setBlock(x, floorY + 1, z, Material.BARREL);
+        else if (roll < 0.22) chunkData.setBlock(x, floorY + 1, z, Material.BOOKSHELF);
+        else if (roll < 0.42) chunkData.setBlock(x, floorY + 1, z, Material.CHEST);
+        else if (roll < 0.55) chunkData.setBlock(x, floorY + 1, z, Material.CRAFTING_TABLE);
+        else if (roll < 0.65) chunkData.setBlock(x, floorY + 1, z, Material.LECTERN);
+        else if (roll < 0.75) chunkData.setBlock(x, floorY + 1, z, Material.FURNACE);
+        else if (roll < 0.82) {
+            chunkData.setBlock(x, floorY + 1, z, Material.OAK_STAIRS);
+        } else {
+            chunkData.setBlock(x, floorY + 1, z, Material.OAK_FENCE);
+            chunkData.setBlock(x, floorY + 2, z, Material.OAK_PRESSURE_PLATE);
+        }
+    }
+
+    private void generateStairwells(ChunkData chunkData, int x, int z, int worldX, int worldZ) {
+        int localX = Math.floorMod(worldX, MODULE);
+        int localZ = Math.floorMod(worldZ, MODULE);
+        int moduleX = Math.floorDiv(worldX, MODULE);
+        int moduleZ = Math.floorDiv(worldZ, MODULE);
+
+        Random r = new Random(moduleX * 456789123L ^ moduleZ * 987654321L);
+
+        if (r.nextDouble() > 0.25) return;
+        if (!(localX >= 20 && localX <= 30 && localZ >= 20 && localZ <= 30)) return;
+
+        for (int i = 0; i < FLOORS.length - 1; i++) {
+            int lower = FLOORS[i];
+            int upper = FLOORS[i + 1];
+
+            for (int y = lower; y <= upper + ROOM_HEIGHT; y++) {
+                chunkData.setBlock(x, y, z, Material.AIR);
+            }
+
+            if (localX == 20 || localX == 30 || localZ == 20 || localZ == 30) {
+                for (int y = lower; y < upper; y++) {
+                    chunkData.setBlock(x, y, z, Material.LIGHT_GRAY_CONCRETE);
+                }
+            }
+
+            int step = localX - 21;
+
+            if (localZ >= 24 && localZ <= 26 && step >= 0 && step <= 8) {
+                int stairY = lower + 1 + step;
+                Material stairMaterial = lower < 55 ? Material.SANDSTONE_STAIRS : lower < 85 ? Material.STONE_BRICK_STAIRS : Material.NETHER_BRICK_STAIRS;
+
+                chunkData.setBlock(x, stairY, z, stairMaterial);
+
+                if (stairY + 1 <= upper) chunkData.setBlock(x, stairY + 1, z, Material.AIR);
+                if (stairY + 2 <= upper) chunkData.setBlock(x, stairY + 2, z, Material.AIR);
+            }
+
+            if (localX >= 23 && localX <= 27 && localZ >= 23 && localZ <= 27) {
+                int landingY = lower + ((upper - lower) / 2);
+                chunkData.setBlock(x, landingY, z, Material.SMOOTH_STONE);
+            }
+
+            if ((localX == 25 && localZ == 20) || (localX == 25 && localZ == 30)) {
+                for (int y = lower + 1; y < lower + 5; y++) {
+                    chunkData.setBlock(x, y, z, Material.AIR);
+                }
+            }
+        }
+    }
+
+    private int getRegionType(int worldX, int worldZ) {
+        int regionX = Math.floorDiv(worldX, 240);
+        int regionZ = Math.floorDiv(worldZ, 240);
+        Random r = new Random(regionX * 92837111L ^ regionZ * 194723L);
+        return r.nextInt(7);
+    }
+
+    private Material getFloorMaterial(int floorY, int worldX, int worldZ) {
+        if (floorY == FLOORS[0]) return Material.BEDROCK;
+
+        switch (getRegionType(worldX, worldZ)) {
+            case 1: return Material.SMOOTH_SANDSTONE;
+            case 2: return Material.PACKED_ICE;
+            case 3: return Material.DARK_PRISMARINE;
+            case 4: return Material.GRAY_CONCRETE;
+            case 5: return Material.SMOOTH_STONE;
+            case 6: return Material.BLACKSTONE;
+            default: return Material.SMOOTH_SANDSTONE;
+        }
+    }
+
+    private Material getWallMaterial(int floorY, int worldX, int worldZ) {
+        switch (getRegionType(worldX, worldZ)) {
+            case 1: return Material.SANDSTONE;
+            case 2: return Material.SNOW_BLOCK;
+            case 3: return Material.PRISMARINE_BRICKS;
+            case 4: return Material.IRON_BLOCK;
+            case 5: return Material.LIGHT_GRAY_CONCRETE;
+            case 6: return Material.BLACK_CONCRETE;
+            default: return Material.YELLOW_TERRACOTTA;
+        }
+    }
+
+    private Material getCeilingMaterial(int floorY, int worldX, int worldZ) {
+        switch (getRegionType(worldX, worldZ)) {
+            case 1: return Material.CUT_SANDSTONE;
+            case 2: return Material.BLUE_ICE;
+            case 3: return Material.SEA_LANTERN;
+            case 4: return Material.IRON_BARS;
+            case 5: return Material.STRIPPED_OAK_WOOD;
+            case 6: return Material.DEEPSLATE_TILES;
+            default: return Material.SMOOTH_SANDSTONE;
+        }
+    }
+
+    @Override
+    public boolean shouldGenerateBedrock() {
+        return false;
+    }
+
+    @Override
+    public boolean shouldGenerateCaves() {
+        return false;
+    }
+
+    private static class BackroomsPopulator extends BlockPopulator {
+
+        @Override
+        public void populate(@NotNull World world, @NotNull Random random, @NotNull Chunk chunk) {
+            Random r = new Random(chunk.getX() * 341873128712L ^ chunk.getZ() * 132897987541L ^ world.getSeed());
+
+            populateContainers(chunk);
+            populateWallDecorations(world, chunk, r);
+            populateSparseMobs(world, chunk, r);
+            fixMultiverseSpawn(world);
+        }
+
+        private void fixMultiverseSpawn(World world) {
+            if (world.getName().equalsIgnoreCase("Backrooms")) {
+                world.setSpawnLocation(new Location(world, 20.5, FLOORS[0] + 1, 20.5));
+            }
+        }
+
+        private void populateContainers(Chunk chunk) {
+            for (int x = 0; x < 16; x++) {
+                for (int z = 0; z < 16; z++) {
+                    for (int floorY : FLOORS) {
+                        Block block = chunk.getBlock(x, floorY + 1, z);
+                        
+                        if (block.getType() == Material.CHEST || block.getType() == Material.BARREL) {
+                            BlockState state = block.getState(false);
+                            if (state instanceof Lootable lootable) {
+                                int region = getRegionType((chunk.getX() << 4) + x, (chunk.getZ() << 4) + z);
+                                
+                                if (region == 3) {
+                                    lootable.setLootTable(Bukkit.getLootTable(LootTables.BURIED_TREASURE.getKey()));
+                                } else if (region == 6) {
+                                    lootable.setLootTable(Bukkit.getLootTable(LootTables.STRONGHOLD_CORRIDOR.getKey()));
+                                } else if (floorY <= 70) {
+                                    lootable.setLootTable(Bukkit.getLootTable(LootTables.ABANDONED_MINESHAFT.getKey()));
+                                } else if (floorY <= 130) {
+                                    lootable.setLootTable(Bukkit.getLootTable(LootTables.SIMPLE_DUNGEON.getKey()));
+                                } else {
+                                    lootable.setLootTable(Bukkit.getLootTable(LootTables.END_CITY_TREASURE.getKey()));
+                                }
+                                state.update(true, false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private void populateWallDecorations(World world, Chunk chunk, Random r) {
+            int itemsToPlace = 12 + r.nextInt(6);
+            for (int i = 0; i < itemsToPlace; i++) {
+                int blockX = (chunk.getX() << 4) + r.nextInt(16);
+                int blockZ = (chunk.getZ() << 4) + r.nextInt(16);
+                int floorY = FLOORS[r.nextInt(FLOORS.length)];
+                tryPlaceDecoration(world, blockX, floorY + 2, blockZ, r);
+            }
+        }
+
+        private void tryPlaceDecoration(World world, int x, int y, int z, Random r) {
+            BlockFace[] faces = {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST};
+
+            for (BlockFace face : faces) {
+                Block air = world.getBlockAt(x, y, z);
+                Block wall = air.getRelative(face);
+
+                if (!air.getType().isAir()) continue;
+                if (!wall.getType().isSolid()) continue;
+
+                double roll = r.nextDouble();
+
+                if (roll < 0.35) {
+                    placeSign(air, face.getOppositeFace(), r);
+                    return;
+                }
+
+                if (roll < 0.65) {
+                    placeItemFrame(world, air.getLocation(), face.getOppositeFace(), r);
+                    return;
+                }
+
+                if (roll < 0.88) {
+                    placePainting(world, air.getLocation(), face.getOppositeFace(), r);
+                    return;
+                }
+
+                placeFalseDoor(air, face.getOppositeFace(), r);
+                return;
+            }
+        }
+
+        private void placeSign(Block block, BlockFace facing, Random r) {
+            block.setType(Material.OAK_WALL_SIGN, false);
+            BlockData data = block.getBlockData();
+
+            if (data instanceof Directional directional) {
+                directional.setFacing(facing);
+                block.setBlockData(directional, false);
+            }
+
+            BlockState state = block.getState(false);
+            if (state instanceof Sign sign) {
+                String[][] pairedMessages = {
+                        {"DON'T LOOK BACK", "IT SEES YOU"},
+                        {"ROOM SEALED", "DO NOT OPEN"},
+                        {"NO EXIT", "TURN AROUND"},
+                        {"KEEP MOVING", "DON'T SLEEP"},
+                        {"THE LIGHTS LIE", "FOLLOW THE HUM"},
+                        {"SUPPLIES LOW", "RUNNING OUT"},
+                        {"STAIRS MOVE", "THEY SHIFT"},
+                        {"NOT ALONE", "BE QUIET"},
+                        {"WAKE UP", "PLEASE WAKE UP"},
+                        {"LEVEL ERROR", "SYSTEM FAILURE"}
+                };
+                
+                int index = r.nextInt(pairedMessages.length);
+                sign.setLine(0, pairedMessages[index][0]);
+                
+                Block adjacent = block.getRelative(facing == BlockFace.EAST || facing == BlockFace.WEST ? BlockFace.NORTH : BlockFace.EAST);
+                if (adjacent.getType().isAir() && adjacent.getRelative(facing.getOppositeFace()).getType().isSolid()) {
+                    adjacent.setType(Material.OAK_WALL_SIGN, false);
+                    BlockData adjData = adjacent.getBlockData();
+                    if (adjData instanceof Directional adjDir) {
+                        adjDir.setFacing(facing);
+                        adjacent.setBlockData(adjDir, false);
+                    }
+                    BlockState adjState = adjacent.getState(false);
+                    if (adjState instanceof Sign adjSign) {
+                        adjSign.setLine(0, pairedMessages[index][1]);
+                    }
+                }
+            }
+        }
+
+        private void placeItemFrame(World world, Location location, BlockFace facing, Random r) {
+            try {
+                ItemFrame frame = world.spawn(location.clone().add(0.5, 0.5, 0.5), ItemFrame.class);
+                frame.setFacingDirection(facing, true);
+
+                Material[] items = {
+                        Material.PAPER, Material.MAP, Material.COMPASS, Material.CLOCK,
+                        Material.BONE, Material.ROTTEN_FLESH, Material.BOOK, Material.REDSTONE_TORCH
+                };
+
+                if (r.nextDouble() < 0.75) frame.setItem(new ItemStack(items[r.nextInt(items.length)]));
+            } catch (Exception ignored) {
+            }
+        }
+
+        private void placePainting(World world, Location location, BlockFace facing, Random r) {
+            try {
+                Painting painting = world.spawn(location.clone().add(0.5, 0.5, 0.5), Painting.class);
+                painting.setFacingDirection(facing, true);
+                Art[] art = Art.values();
+                painting.setArt(art[r.nextInt(art.length)], true);
+            } catch (Exception ignored) {
+            }
+        }
+
+        private void placeFalseDoor(Block block, BlockFace facing, Random r) {
+            if (!block.getRelative(BlockFace.DOWN).getType().isSolid()) return;
+            if (!block.getRelative(BlockFace.UP).getType().isAir()) return;
+
+            Material mat = r.nextDouble() < 0.85 ? Material.OAK_DOOR : Material.IRON_DOOR;
+
+            Door bottom = (Door) Bukkit.createBlockData(mat);
+            bottom.setHalf(Bisected.Half.BOTTOM);
+            bottom.setFacing(facing);
+
+            Door top = (Door) Bukkit.createBlockData(mat);
+            top.setHalf(Bisected.Half.TOP);
+            top.setFacing(facing);
+
+            block.setBlockData(bottom, false);
+            block.getRelative(BlockFace.UP).setBlockData(top, false);
+        }
+
+        private void populateSparseMobs(World world, Chunk chunk, Random r) {
+            if (r.nextDouble() > 0.30) return;
+
+            int count = r.nextDouble() < 0.90 ? 1 : 2;
+
+            for (int i = 0; i < count; i++) {
+                int blockX = (chunk.getX() << 4) + r.nextInt(16);
+                int blockZ = (chunk.getZ() << 4) + r.nextInt(16);
+                int floorY = FLOORS[r.nextInt(FLOORS.length)];
+
+                Block feet = world.getBlockAt(blockX, floorY + 1, blockZ);
+                Block head = world.getBlockAt(blockX, floorY + 2, blockZ);
+                Block ground = world.getBlockAt(blockX, floorY, blockZ);
+
+                if (!feet.getType().isAir()) continue;
+                if (!head.getType().isAir()) continue;
+                if (!ground.getType().isSolid()) continue;
+                
+                if (blockX >= 4 && blockX <= 36 && blockZ >= 4 && blockZ <= 36 && floorY == FLOORS[0]) continue;
+
+                int region = getRegionType(blockX, blockZ);
+                world.spawnEntity(new Location(world, blockX + 0.5, floorY + 1, blockZ + 0.5), randomMob(r, floorY, region));
+            }
+        }
+
+        private int getRegionType(int worldX, int worldZ) {
+            int regionX = Math.floorDiv(worldX, 240);
+            int regionZ = Math.floorDiv(worldZ, 240);
+            Random r = new Random(regionX * 92837111L ^ regionZ * 194723L);
+            return r.nextInt(7);
+        }
+
+        private EntityType randomMob(Random r, int floorY, int region) {
+            double roll = r.nextDouble();
+
+            if (region == 3) {
+                return roll < 0.70 ? EntityType.DROWNED : EntityType.GUARDIAN;
+            }
+            
+            if (region == 6) {
+                return roll < 0.60 ? EntityType.WITHER_SKELETON : EntityType.ENDERMAN;
+            }
+
+            if (roll < 0.30) {
+                EntityType[] hostile = {
+                        EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER,
+                        EntityType.SPIDER, EntityType.ENDERMAN, EntityType.WITCH
+                };
+                return hostile[r.nextInt(hostile.length)];
+            }
+
+            if (roll < 0.75) {
+                EntityType[] passive = {
+                        EntityType.CAT, EntityType.RABBIT, EntityType.WOLF, EntityType.FOX
+                };
+                return passive[r.nextInt(passive.length)];
+            }
+
+            if (roll < 0.95) return EntityType.VILLAGER;
+
+            return EntityType.IRON_GOLEM;
+        }
+    }
+}
