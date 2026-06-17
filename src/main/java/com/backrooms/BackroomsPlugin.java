@@ -9,7 +9,10 @@ public class BackroomsPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        getLogger().info("========================================");
         getLogger().info("The Backrooms system is online and stable.");
+        getLogger().info("Modular loot, decoration, and mob pools active.");
+        getLogger().info("========================================");
     }
 
     @Override
