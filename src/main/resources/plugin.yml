@@ -1,13 +1,7 @@
-name: backrooms
-version: 1.0.0
+name: MC-Backrooms
+version: '${project.version}'
 main: com.backrooms.BackroomsPlugin
 api-version: '1.21'
-description: A deterministic asymmetric Backrooms generator.
-# CRITICAL ADDITION: Registers your custom generator to let plugins like Multiverse find it
-worlds:
-  Backrooms:
-    generator: backrooms
-permissions:
-  backrooms.entry:
-    description: Allows users to warp into the backrooms dimension.
-    default: true
+depend: [WorldEdit]
+description: A procedural Backrooms world generator tile system.
+author: Brock
